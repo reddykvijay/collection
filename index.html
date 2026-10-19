@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Daily Collection Batch Entry</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #f5f5f7);
+      --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #111111);
+      --btn: var(--tg-theme-button-color, #007aff);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 12px;
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .header h2 { margin: 0; font-size: 1.15rem; }
+    .date-input {
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    .row-card {
+      background: var(--card-bg);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      position: relative;
+    }
+    .row-grid {
+      display: grid;
+      grid-template-columns: 1fr 100px;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .mode-grid {
+      display: grid;
+      grid-template-columns: 1fr 36px;
+      gap: 8px;
+      align-items: center;
+    }
+    input, select {
+      width: 100%;
+      padding: 9px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      box-sizing: border-box;
+    }
+    .del-btn {
+      background: #fee2e2;
+      color: #dc2626;
+      border: none;
+      border-radius: 6px;
+      height: 38px;
+      cursor: pointer;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .add-btn {
+      width: 100%;
+      padding: 10px;
+      background: #eef2ff;
+      color: #3730a3;
+      border: 1px dashed #6366f1;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      margin-bottom: 16px;
+    }
+    .summary-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 16px;
+      font-size: 0.85rem;
+    }
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .summary-row.total {
+      font-weight: bold;
+      border-top: 1px solid #cbd5e1;
+      padding-top: 6px;
+      margin-top: 6px;
+    }
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      background: var(--btn);
+      color: var(--btn-text);
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .loading {
+      text-align: center;
+      color: #64748b;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h2>Collection Entry</h2>
+    <input type="date" id="entryDate" class="date-input">
+  </div>
+
+  <div id="loadingStatus" class="loading">Loading customers...</div>
+
+  <!-- Shared Autocomplete Datalist -->
+  <datalist id="customerList"></datalist>
+
+  <form id="batchForm">
+    <div id="rowsContainer"></div>
+
+    <button type="button" class="add-btn" id="addRowBtn">+ Add Customer / Row</button>
+
+    <!-- Notebook-style Live Reconciliation -->
+    <div class="summary-card">
+      <div class="summary-row"><span>Total Collections:</span> <span id="sumTotal">₹0</span></div>
+      <div class="summary-row"><span>Less PhonePe (Phb):</span> <span id="sumPhb">-₹0</span></div>
+      <div class="summary-row"><span>Less Vijay A/c:</span> <span id="sumAc">-₹0</span></div>
+      <div class="summary-row"><span>Less Expenses:</span> <span id="sumExp">-₹0</span></div>
+      <div class="summary-row"><span>Less Handed to Vijay Anna:</span> <span id="sumAnna">-₹0</span></div>
+      <div class="summary-row total"><span>Net Cash in Hand:</span> <span id="sumCash">₹0</span></div>
+    </div>
+
+    <button type="submit" class="submit-btn" id="submitBtn">Submit All Entries</button>
+  </form>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) tg.expand();
+
+    // !!! PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE !!!
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzx4gD6D2qn7hvygdOm6I15GhYDm36Nb0ioVgOMnBYLjS9jf3yJDHFCl8MY9CiziLSDsg/exec";
+
+    // Set today's date default
+    document.getElementById("entryDate").value = new Date().toISOString().split('T')[0];
+
+    // Fetch customer list for autocomplete
+    async function loadCustomers() {
+      try {
+        const res = await fetch(SCRIPT_URL);
+        const data = await res.json();
+        const datalist = document.getElementById("customerList");
+        datalist.innerHTML = "";
+        if (data.customers && data.customers.length > 0) {
+          data.customers.forEach(name => {
+            const opt = document.createElement("option");
+            opt.value = name;
+            datalist.appendChild(opt);
+          });
+          document.getElementById("loadingStatus").innerText = `${data.customers.length} customers loaded`;
+        } else {
+          document.getElementById("loadingStatus").innerText = "Ready (Type names directly)";
+        }
+      } catch (err) {
+        document.getElementById("loadingStatus").innerText = "Offline mode (Ready to enter names)";
+      }
+    }
+
+    loadCustomers();
+
+    const container = document.getElementById("rowsContainer");
+
+    function createRow(defaultCustomer = "", defaultAmount = "", defaultMode = "Cash") {
+      const rowId = 'row_' + Date.now() + Math.random().toString(36).substring(2, 5);
+      const div = document.createElement("div");
+      div.className = "row-card";
+      div.id = rowId;
+
+      div.innerHTML = `
+        <div class="row-grid">
+          <input type="text" list="customerList" class="inp-customer" placeholder="Type customer name..." value="${defaultCustomer}" required autocomplete="off">
+          <input type="number" class="inp-amount" placeholder="₹ Amount" value="${defaultAmount}" required>
+        </div>
+        <div class="mode-grid">
+          <select class="inp-mode">
+            <option value="Cash" ${defaultMode === 'Cash' ? 'selected' : ''}>Cash</option>
+            <option value="Phb" ${defaultMode === 'Phb' ? 'selected' : ''}>Phb (PhonePe)</option>
+            <option value="Vijay A/c" ${defaultMode === 'Vijay A/c' ? 'selected' : ''}>Vijay A/c (Bank)</option>
+            <option value="Expense" ${defaultMode === 'Expense' ? 'selected' : ''}>Expense (Outflow)</option>
+            <option value="Vijay Anna" ${defaultMode === 'Vijay Anna' ? 'selected' : ''}>To Vijay Anna</option>
+          </select>
+          <button type="button" class="del-btn" onclick="removeRow('${rowId}')">✕</button>
+        </div>
+      `;
+      container.appendChild(div);
+
+      div.querySelector(".inp-amount").addEventListener("input", calculateTotals);
+      div.querySelector(".inp-mode").addEventListener("change", calculateTotals);
+      calculateTotals();
+    }
+
+    window.removeRow = function(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+      calculateTotals();
+    };
+
+    function calculateTotals() {
+      let totalCol = 0, phb = 0, ac = 0, exp = 0, anna = 0;
+
+      const cards = document.querySelectorAll(".row-card");
+      cards.forEach(card => {
+        const amt = parseFloat(card.querySelector(".inp-amount").value) || 0;
+        const mode = card.querySelector(".inp-mode").value;
+
+        if (mode === "Expense") {
+          exp += amt;
+        } else if (mode === "Vijay Anna") {
+          anna += amt;
+        } else {
+          totalCol += amt;
+          if (mode === "Phb") phb += amt;
+          if (mode === "Vijay A/c") ac += amt;
+        }
+      });
+
+      const netCash = totalCol - phb - ac - exp - anna;
+
+      document.getElementById("sumTotal").innerText = `₹${totalCol}`;
+      document.getElementById("sumPhb").innerText = `-₹${phb}`;
+      document.getElementById("sumAc").innerText = `-₹${ac}`;
+      document.getElementById("sumExp").innerText = `-₹${exp}`;
+      document.getElementById("sumAnna").innerText = `-₹${anna}`;
+      document.getElementById("sumCash").innerText = `₹${netCash}`;
+    }
+
+    document.getElementById("addRowBtn").addEventListener("click", () => createRow());
+
+    // Start with 3 empty rows
+    createRow();
+    createRow();
+    createRow();
+
+    // Form Submission
+    document.getElementById("batchForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const cards = document.querySelectorAll(".row-card");
+      const entries = [];
+
+      cards.forEach(card => {
+        const cust = card.querySelector(".inp-customer").value.trim();
+        const amt = card.querySelector(".inp-amount").value;
+        const mode = card.querySelector(".inp-mode").value;
+        if (cust && amt) {
+          entries.push({ customer: cust, amount: amt, mode: mode });
+        }
+      });
+
+      if (entries.length === 0) {
+        alert("Please enter at least one transaction.");
+        return;
+      }
+
+      const submitBtn = document.getElementById("submitBtn");
+      submitBtn.disabled = true;
+      submitBtn.innerText = "Submitting entries...";
+
+      const payload = {
+        date: document.getElementById("entryDate").value,
+        agent: tg?.initDataUnsafe?.user?.first_name || "Agent",
+        entries: entries
+      };
+
+      try {
+        await fetch(SCRIPT_URL, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        alert("All entries saved successfully!");
+        if (tg) tg.close();
+      } catch (err) {
+        alert("Error saving: " + err.message);
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Submit All Entries";
+      }
+    });
+  </script>
+</body>
+</html>
