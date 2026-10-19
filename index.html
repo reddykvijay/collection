@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Daily Collection Entry</title>
+  <title>Daily Collection & Expense Entry</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
@@ -21,17 +21,15 @@
       padding: 12px;
       box-sizing: border-box;
     }
-    .header {
+    .header-bar {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      gap: 8px;
       margin-bottom: 12px;
     }
-    .header h2 { margin: 0; font-size: 1.15rem; }
-    .date-input {
-      padding: 6px 10px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
+    .header-bar input {
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
       font-size: 0.9rem;
     }
     .row-card {
@@ -40,6 +38,36 @@
       padding: 10px;
       margin-bottom: 10px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border-left: 4px solid #10b981; /* Green for collection default */
+    }
+    .row-card.is-expense {
+      border-left-color: #ef4444; /* Red for expense */
+    }
+    .pill-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .pill-btn {
+      flex: 1;
+      padding: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-align: center;
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      background: #f8fafc;
+      cursor: pointer;
+    }
+    .pill-btn.active-col {
+      background: #dcfce7;
+      color: #15803d;
+      border-color: #86efac;
+    }
+    .pill-btn.active-exp {
+      background: #fee2e2;
+      color: #b91c1c;
+      border-color: #fca5a5;
     }
     .row-grid {
       display: grid;
@@ -62,19 +90,15 @@
       box-sizing: border-box;
     }
     .del-btn {
-      background: #fee2e2;
-      color: #dc2626;
+      background: #f1f5f9;
+      color: #64748b;
       border: none;
       border-radius: 6px;
       height: 38px;
       cursor: pointer;
       font-size: 1.1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
     .del-btn:disabled {
-      background: #f1f5f9;
       color: #cbd5e1;
       cursor: not-allowed;
     }
@@ -108,6 +132,7 @@
       border-top: 1px solid #cbd5e1;
       padding-top: 6px;
       margin-top: 6px;
+      font-size: 0.95rem;
     }
     .submit-btn {
       width: 100%;
@@ -120,25 +145,34 @@
       font-weight: 600;
       cursor: pointer;
     }
-    .loading {
-      text-align: center;
+    .cache-status {
+      font-size: 0.75rem;
       color: #64748b;
-      font-size: 0.85rem;
+      text-align: center;
       margin-bottom: 8px;
     }
   </style>
 </head>
 <body>
 
-  <div class="header">
-    <h2>Collection Entry</h2>
-    <input type="date" id="entryDate" class="date-input">
+  <div class="header-bar">
+    <input type="date" id="entryDate" style="flex: 1;">
+    <input type="number" id="openingBal" placeholder="Opening Bal (₹)" style="flex: 1;" title="Carried cash balance">
   </div>
 
-  <div id="loadingStatus" class="loading">Loading customers...</div>
+  <div id="cacheStatus" class="cache-status">Loading customers from buffer...</div>
 
-  <!-- Shared Autocomplete Datalist -->
+  <!-- Shared Datalist for Customers & Common Expenses -->
   <datalist id="customerList"></datalist>
+  <datalist id="expensePresets">
+    <option value="Ladder rent (3)">[cite: 7]
+    <option value="Cool water (office)">[cite: 7]
+    <option value="Stay wire">[cite: 10]
+    <option value="Print pad / pod">[cite: 3]
+    <option value="Office tea/snacks">
+    <option value="Petrol / Conveyance">
+    <option value="Hardware / OFC materials">
+  </datalist>
 
   <form id="batchForm">
     <div id="rowsContainer"></div>
@@ -147,29 +181,29 @@
 
     <!-- Real-time Balance Summary -->
     <div class="summary-card">
-      <div class="summary-row"><span>Total Collections:</span> <span id="sumTotal">₹0</span></div>
-      <div class="summary-row"><span>Less PhonePe (Phb):</span> <span id="sumPhb">-₹0</span></div>
-      <div class="summary-row"><span>Less Vijay A/c:</span> <span id="sumAc">-₹0</span></div>
-      <div class="summary-row"><span>Less Expenses:</span> <span id="sumExp">-₹0</span></div>
-      <div class="summary-row"><span>Less Handed to Vijay Anna:</span> <span id="sumAnna">-₹0</span></div>
-      <div class="summary-row total"><span>Net Cash in Hand:</span> <span id="sumCash">₹0</span></div>
+      <div class="summary-row"><span>Opening Balance (OB):</span> <span id="dispOb">₹0</span></div>
+      <div class="summary-row"><span>Total Collections:</span> <span id="dispCol">₹0</span></div>
+      <div class="summary-row"><span>Less Online (Phb/Bank):</span> <span id="dispOnline">-₹0</span></div>
+      <div class="summary-row"><span>Less Cash Expenses:</span> <span id="dispExp">-₹0</span></div>
+      <div class="summary-row"><span>Less to Vijay Anna:</span> <span id="dispAnna">-₹0</span></div>
+      <div class="summary-row total"><span>Closing Cash in Hand:</span> <span id="dispCash">₹0</span></div>
     </div>
 
-    <button type="submit" class="submit-btn" id="submitBtn">Submit Report</button>
+    <button type="submit" class="submit-btn" id="submitBtn">Submit Day Report</button>
   </form>
 
   <script>
     const tg = window.Telegram?.WebApp;
     if (tg) tg.expand();
 
-    // !!! PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE !!!
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzx4gD6D2qn7hvygdOm6I15GhYDm36Nb0ioVgOMnBYLjS9jf3yJDHFCl8MY9CiziLSDsg/exec";
+    // !!! PASTE YOUR DEPLOYED APPS SCRIPT URL HERE !!!
+    const SCRIPT_URL = "YOUR_APPS_SCRIPT_URL";
 
-    // Set today's date
     document.getElementById("entryDate").value = new Date().toISOString().split('T')[0];
+    document.getElementById("openingBal").addEventListener("input", calculateTotals);
 
-    // Load customer names for autocomplete
-    async function loadCustomers() {
+    // Fast-loading from backend 6-hour buffer
+    async function loadBufferedCustomers() {
       try {
         const res = await fetch(SCRIPT_URL);
         const data = await res.json();
@@ -181,37 +215,44 @@
             opt.value = name;
             datalist.appendChild(opt);
           });
-          document.getElementById("loadingStatus").innerText = `${data.customers.length} customers loaded`;
+          document.getElementById("cacheStatus").innerText = `⚡ ${data.customers.length} users buffered (Instant Load)`;
         } else {
-          document.getElementById("loadingStatus").innerText = "Ready (Type names directly)";
+          document.getElementById("cacheStatus").innerText = "Type names directly";
         }
       } catch (err) {
-        document.getElementById("loadingStatus").innerText = "Offline mode (Ready to enter names)";
+        document.getElementById("cacheStatus").innerText = "Ready (Offline Buffer)";
       }
     }
-
-    loadCustomers();
+    loadBufferedCustomers();
 
     const container = document.getElementById("rowsContainer");
 
-    function createRow(defaultCustomer = "", defaultAmount = "", defaultMode = "Cash") {
+    function createRow(type = "collection", defaultDesc = "", defaultAmt = "", defaultMode = "Cash") {
       const rowId = 'row_' + Date.now() + Math.random().toString(36).substring(2, 5);
       const div = document.createElement("div");
-      div.className = "row-card";
+      div.className = `row-card ${type === 'expense' ? 'is-expense' : ''}`;
       div.id = rowId;
 
       div.innerHTML = `
+        <div class="pill-group">
+          <div class="pill-btn ${type === 'collection' ? 'active-col' : ''}" onclick="setType('${rowId}', 'collection')">📥 Collection (In)</div>
+          <div class="pill-btn ${type === 'expense' ? 'active-exp' : ''}" onclick="setType('${rowId}', 'expense')">📤 Expense / Debit (Out)</div>
+        </div>
         <div class="row-grid">
-          <input type="text" list="customerList" class="inp-customer" placeholder="Type customer name..." value="${defaultCustomer}" required autocomplete="off">
-          <input type="number" class="inp-amount" placeholder="₹ Amount" value="${defaultAmount}" required>
+          <input type="text" 
+                 list="${type === 'collection' ? 'customerList' : 'expensePresets'}" 
+                 class="inp-desc" 
+                 placeholder="${type === 'collection' ? 'Customer name...' : 'Expense item (e.g. ladder rent)...'}" 
+                 value="${defaultDesc}" 
+                 required autocomplete="off">
+          <input type="number" class="inp-amount" placeholder="₹ Amount" value="${defaultAmt}" required>
         </div>
         <div class="mode-grid">
           <select class="inp-mode">
             <option value="Cash" ${defaultMode === 'Cash' ? 'selected' : ''}>Cash</option>
             <option value="Phb" ${defaultMode === 'Phb' ? 'selected' : ''}>Phb (PhonePe)</option>
-            <option value="Vijay A/c" ${defaultMode === 'Vijay A/c' ? 'selected' : ''}>Vijay A/c (Bank)</option>
-            <option value="Expense" ${defaultMode === 'Expense' ? 'selected' : ''}>Expense (Outflow)</option>
-            <option value="Vijay Anna" ${defaultMode === 'Vijay Anna' ? 'selected' : ''}>To Vijay Anna</option>
+            <option value="Vijay A/c" ${defaultMode === 'Vijay A/c' ? 'selected' : ''}>Vijay A/c</option>
+            <option value="Vijay Anna" ${defaultMode === 'Vijay Anna' ? 'selected' : ''}>Handed to Vijay Anna</option>
           </select>
           <button type="button" class="del-btn" onclick="removeRow('${rowId}')">✕</button>
         </div>
@@ -220,16 +261,36 @@
 
       div.querySelector(".inp-amount").addEventListener("input", calculateTotals);
       div.querySelector(".inp-mode").addEventListener("change", calculateTotals);
-      
+
       updateDeleteButtons();
       calculateTotals();
     }
 
+    window.setType = function(rowId, newType) {
+      const row = document.getElementById(rowId);
+      const pills = row.querySelectorAll(".pill-btn");
+      const input = row.querySelector(".inp-desc");
+
+      if (newType === 'collection') {
+        row.classList.remove("is-expense");
+        pills[0].className = "pill-btn active-col";
+        pills[1].className = "pill-btn";
+        input.setAttribute("list", "customerList");
+        input.placeholder = "Customer name...";
+      } else {
+        row.classList.add("is-expense");
+        pills[0].className = "pill-btn";
+        pills[1].className = "pill-btn active-exp";
+        input.setAttribute("list", "expensePresets");
+        input.placeholder = "Expense item (e.g. ladder rent)...";
+      }
+      calculateTotals();
+    };
+
     window.removeRow = function(id) {
       const cards = document.querySelectorAll(".row-card");
       if (cards.length > 1) {
-        const el = document.getElementById(id);
-        if (el) el.remove();
+        document.getElementById(id).remove();
         updateDeleteButtons();
         calculateTotals();
       }
@@ -246,57 +307,64 @@
     }
 
     function calculateTotals() {
-      let totalCol = 0, phb = 0, ac = 0, exp = 0, anna = 0;
+      const ob = parseFloat(document.getElementById("openingBal").value) || 0;
+      let totalCol = 0, onlineIn = 0, cashExp = 0, anna = 0;
 
       const cards = document.querySelectorAll(".row-card");
       cards.forEach(card => {
+        const isExpense = card.classList.contains("is-expense");
         const amt = parseFloat(card.querySelector(".inp-amount").value) || 0;
         const mode = card.querySelector(".inp-mode").value;
 
-        if (mode === "Expense") {
-          exp += amt;
-        } else if (mode === "Vijay Anna") {
-          anna += amt;
+        if (isExpense) {
+          if (mode === "Vijay Anna") {
+            anna += amt;
+          } else if (mode === "Cash") {
+            cashExp += amt;
+          }
         } else {
           totalCol += amt;
-          if (mode === "Phb") phb += amt;
-          if (mode === "Vijay A/c") ac += amt;
+          if (mode === "Phb" || mode === "Vijay A/c") {
+            onlineIn += amt;
+          }
         }
       });
 
-      const netCash = totalCol - phb - ac - exp - anna;
+      const cashCollected = totalCol - onlineIn;
+      const closingCash = (ob + cashCollected) - cashExp - anna;
 
-      document.getElementById("sumTotal").innerText = `₹${totalCol}`;
-      document.getElementById("sumPhb").innerText = `-₹${phb}`;
-      document.getElementById("sumAc").innerText = `-₹${ac}`;
-      document.getElementById("sumExp").innerText = `-₹${exp}`;
-      document.getElementById("sumAnna").innerText = `-₹${anna}`;
-      document.getElementById("sumCash").innerText = `₹${netCash}`;
+      document.getElementById("dispOb").innerText = `₹${ob}`;
+      document.getElementById("dispCol").innerText = `₹${totalCol}`;
+      document.getElementById("dispOnline").innerText = `-₹${onlineIn}`;
+      document.getElementById("dispExp").innerText = `-₹${cashExp}`;
+      document.getElementById("dispAnna").innerText = `-₹${anna}`;
+      document.getElementById("dispCash").innerText = `₹${closingCash}`;
     }
 
-    // Button to add rows on demand
     document.getElementById("addRowBtn").addEventListener("click", () => createRow());
 
-    // Starts with exactly 1 row
+    // Starts with 1 row
     createRow();
 
-    // Submission handler
+    // Submission
     document.getElementById("batchForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const cards = document.querySelectorAll(".row-card");
       const entries = [];
 
       cards.forEach(card => {
-        const cust = card.querySelector(".inp-customer").value.trim();
+        const desc = card.querySelector(".inp-desc").value.trim();
         const amt = card.querySelector(".inp-amount").value;
         const mode = card.querySelector(".inp-mode").value;
-        if (cust && amt) {
-          entries.push({ customer: cust, amount: amt, mode: mode });
+        const type = card.classList.contains("is-expense") ? "expense" : "collection";
+
+        if (desc && amt) {
+          entries.push({ customer: desc, amount: amt, mode: mode, type: type });
         }
       });
 
       if (entries.length === 0) {
-        alert("Please enter at least one transaction.");
+        alert("Please enter at least one entry.");
         return;
       }
 
@@ -306,6 +374,7 @@
 
       const payload = {
         date: document.getElementById("entryDate").value,
+        openingBalance: document.getElementById("openingBal").value || 0,
         agent: tg?.initDataUnsafe?.user?.first_name || "Agent",
         entries: entries
       };
@@ -318,12 +387,12 @@
           body: JSON.stringify(payload)
         });
 
-        alert("All entries saved successfully!");
+        alert("Report submitted successfully!");
         if (tg) tg.close();
       } catch (err) {
         alert("Error saving: " + err.message);
         submitBtn.disabled = false;
-        submitBtn.innerText = "Submit Report";
+        submitBtn.innerText = "Submit Day Report";
       }
     });
   </script>
