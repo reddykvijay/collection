@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Daily Collection Batch Entry</title>
+  <title>Daily Collection Entry</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg: var(--tg-theme-bg-color, #f5f5f7);
+      --bg: var(--tg-theme-bg-color, #f4f5f7);
       --card-bg: var(--tg-theme-secondary-bg-color, #ffffff);
       --text: var(--tg-theme-text-color, #111111);
       --btn: var(--tg-theme-button-color, #007aff);
@@ -40,7 +40,6 @@
       padding: 10px;
       margin-bottom: 10px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-      position: relative;
     }
     .row-grid {
       display: grid;
@@ -50,7 +49,7 @@
     }
     .mode-grid {
       display: grid;
-      grid-template-columns: 1fr 36px;
+      grid-template-columns: 1fr 38px;
       gap: 8px;
       align-items: center;
     }
@@ -74,9 +73,14 @@
       align-items: center;
       justify-content: center;
     }
+    .del-btn:disabled {
+      background: #f1f5f9;
+      color: #cbd5e1;
+      cursor: not-allowed;
+    }
     .add-btn {
       width: 100%;
-      padding: 10px;
+      padding: 12px;
       background: #eef2ff;
       color: #3730a3;
       border: 1px dashed #6366f1;
@@ -139,9 +143,9 @@
   <form id="batchForm">
     <div id="rowsContainer"></div>
 
-    <button type="button" class="add-btn" id="addRowBtn">+ Add Customer / Row</button>
+    <button type="button" class="add-btn" id="addRowBtn">+ Add Another Entry</button>
 
-    <!-- Notebook-style Live Reconciliation -->
+    <!-- Real-time Balance Summary -->
     <div class="summary-card">
       <div class="summary-row"><span>Total Collections:</span> <span id="sumTotal">₹0</span></div>
       <div class="summary-row"><span>Less PhonePe (Phb):</span> <span id="sumPhb">-₹0</span></div>
@@ -151,7 +155,7 @@
       <div class="summary-row total"><span>Net Cash in Hand:</span> <span id="sumCash">₹0</span></div>
     </div>
 
-    <button type="submit" class="submit-btn" id="submitBtn">Submit All Entries</button>
+    <button type="submit" class="submit-btn" id="submitBtn">Submit Report</button>
   </form>
 
   <script>
@@ -159,12 +163,12 @@
     if (tg) tg.expand();
 
     // !!! PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE !!!
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzx4gD6D2qn7hvygdOm6I15GhYDm36Nb0ioVgOMnBYLjS9jf3yJDHFCl8MY9CiziLSDsg/exec";
+    const SCRIPT_URL = "YOUR_APPS_SCRIPT_URL";
 
-    // Set today's date default
+    // Set today's date
     document.getElementById("entryDate").value = new Date().toISOString().split('T')[0];
 
-    // Fetch customer list for autocomplete
+    // Load customer names for autocomplete
     async function loadCustomers() {
       try {
         const res = await fetch(SCRIPT_URL);
@@ -216,14 +220,30 @@
 
       div.querySelector(".inp-amount").addEventListener("input", calculateTotals);
       div.querySelector(".inp-mode").addEventListener("change", calculateTotals);
+      
+      updateDeleteButtons();
       calculateTotals();
     }
 
     window.removeRow = function(id) {
-      const el = document.getElementById(id);
-      if (el) el.remove();
-      calculateTotals();
+      const cards = document.querySelectorAll(".row-card");
+      if (cards.length > 1) {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+        updateDeleteButtons();
+        calculateTotals();
+      }
     };
+
+    function updateDeleteButtons() {
+      const cards = document.querySelectorAll(".row-card");
+      const delButtons = document.querySelectorAll(".del-btn");
+      if (cards.length === 1) {
+        delButtons[0].disabled = true;
+      } else {
+        delButtons.forEach(btn => btn.disabled = false);
+      }
+    }
 
     function calculateTotals() {
       let totalCol = 0, phb = 0, ac = 0, exp = 0, anna = 0;
@@ -254,14 +274,13 @@
       document.getElementById("sumCash").innerText = `₹${netCash}`;
     }
 
+    // Button to add rows on demand
     document.getElementById("addRowBtn").addEventListener("click", () => createRow());
 
-    // Start with 3 empty rows
-    createRow();
-    createRow();
+    // Starts with exactly 1 row
     createRow();
 
-    // Form Submission
+    // Submission handler
     document.getElementById("batchForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const cards = document.querySelectorAll(".row-card");
@@ -304,7 +323,7 @@
       } catch (err) {
         alert("Error saving: " + err.message);
         submitBtn.disabled = false;
-        submitBtn.innerText = "Submit All Entries";
+        submitBtn.innerText = "Submit Report";
       }
     });
   </script>
